@@ -64,8 +64,6 @@ class InputWidget(Widget):
 
     width = Override(default=300)
 
-    height_policy = Override(default="min")
-
     @classmethod
     def coerce_value(cls, val):
         prop_obj = cls.lookup('value')

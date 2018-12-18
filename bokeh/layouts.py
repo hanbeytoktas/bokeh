@@ -84,9 +84,12 @@ def row(*args, **kwargs):
     row_children = []
     for item in children:
         if isinstance(item, LayoutDOM):
+            if sizing_mode is not None and _has_auto_sizing(item):
+                item.sizing_mode = sizing_mode
             row_children.append(item)
         else:
             raise ValueError("""Only LayoutDOM items can be inserted into a row. Tried to insert: %s of type %s""" % (item, type(item)))
+
     return Row(children=row_children, sizing_mode=sizing_mode, **kwargs)
 
 
@@ -126,9 +129,12 @@ def column(*args, **kwargs):
     col_children = []
     for item in children:
         if isinstance(item, LayoutDOM):
+            if sizing_mode is not None and _has_auto_sizing(item):
+                item.sizing_mode = sizing_mode
             col_children.append(item)
         else:
             raise ValueError("""Only LayoutDOM items can be inserted into a column. Tried to insert: %s of type %s""" % (item, type(item)))
+
     return Column(children=col_children, sizing_mode=sizing_mode, **kwargs)
 
 
@@ -315,13 +321,13 @@ def gridplot(children, sizing_mode=None, toolbar_location='above', ncols=None,
     toolbar = ToolbarBox(toolbar=proxy, toolbar_location=toolbar_location)
 
     if toolbar_location == 'above':
-        return Column(children=[toolbar, grid], rows={0: "min"}, sizing_mode=sizing_mode)
+        return Column(children=[toolbar, grid], sizing_mode=sizing_mode)
     elif toolbar_location == 'below':
-        return Column(children=[grid, toolbar], rows={1: "min"}, sizing_mode=sizing_mode)
+        return Column(children=[grid, toolbar], sizing_mode=sizing_mode)
     elif toolbar_location == 'left':
-        return Row(children=[toolbar, grid], cols={0: "min"}, sizing_mode=sizing_mode)
+        return Row(children=[toolbar, grid], sizing_mode=sizing_mode)
     elif toolbar_location == 'right':
-        return Row(children=[grid, toolbar], cols={1: "min"}, sizing_mode=sizing_mode)
+        return Row(children=[grid, toolbar], sizing_mode=sizing_mode)
 
 #-----------------------------------------------------------------------------
 # Dev API
@@ -388,6 +394,9 @@ class GridSpec(object):
 #-----------------------------------------------------------------------------
 # Private API
 #-----------------------------------------------------------------------------
+
+def _has_auto_sizing(item):
+    return item.sizing_mode is None and item.width_policy == "auto" and item.height_policy == "auto"
 
 def _handle_children(*args, **kwargs):
     children = kwargs.get('children')
