@@ -1,13 +1,12 @@
 from __future__ import absolute_import, print_function
 
 import os
-from os.path import basename
 import time
 import pytest
 import subprocess
 import signal
 
-from os.path import dirname, exists, split
+from os.path import basename, dirname, exists, split
 
 import six
 
@@ -33,7 +32,7 @@ def test_js_examples(js_example, example, report):
         if not pytest.config.option.no_js:
             warn("skipping bokehjs for %s" % example.relpath)
     else:
-        _assert_snapshot(example, "file://%s" % example.path, 'js')
+        _run_in_browser(example, "file://%s" % example.path, 'js')
 
         if example.no_diff:
             warn("skipping image diff for %s" % example.relpath)
@@ -65,7 +64,7 @@ def test_file_examples(file_example, example, report):
         if not pytest.config.option.no_js:
             warn("skipping bokehjs for %s" % example.relpath)
     else:
-        _assert_snapshot(example, "file://%s.html" % example.path_no_ext, 'file')
+        _run_in_browser(example, "file://%s.html" % example.path_no_ext, 'file')
 
         if example.no_diff:
             warn("skipping image diff for %s" % example.relpath)
@@ -104,7 +103,7 @@ def test_server_examples(server_example, example, report, bokeh_server):
             warn("skipping bokehjs for %s" % example.relpath)
 
     else:
-        _assert_snapshot(example, "http://localhost:5006/?bokeh-session-id=%s" % session_id, 'server')
+        _run_in_browser(example, "http://localhost:5006/?bokeh-session-id=%s" % session_id, 'server')
 
         if example.no_diff:
             warn("skipping image diff for %s" % example.relpath)
@@ -168,8 +167,30 @@ def _print_webengine_output(result):
         for line in error['text'].split("\n"):
             fail(line, label="JS")
 
+def _create_baseline(items):
+    lines = []
 
-def _assert_snapshot(example, url, example_type):
+    def descend(items, level):
+        for item in items:
+            type = item["type"]
+
+            bbox = item.get("bbox", None)
+            children = item.get("children", [])
+
+            line = "%s%s" % ("  "*level, type)
+
+            if bbox is not None:
+                line += " bbox=[%s, %s, %s, %s]" % (bbox["left"], bbox["top"], bbox["width"], bbox["height"])
+
+            line += "\n"
+
+            lines.append(line)
+            descend(children, level+1)
+
+    descend(items, 0)
+    return "".join(lines)
+
+def _run_in_browser(example, url, example_type):
     screenshot_path = example.img_path
 
     width = 1000
@@ -184,9 +205,10 @@ def _assert_snapshot(example, url, example_type):
 
     info("Example rendered in %s" % white("%.3fs" % (end - start)))
 
-    success = result['success']
-    timeout = result['timeout']
-    errors = result['errors']
+    success = result["success"]
+    state = result["state"]
+    timeout = result["timeout"]
+    errors = result["errors"]
 
     no_errors = len(errors) == 0
 
@@ -196,8 +218,33 @@ def _assert_snapshot(example, url, example_type):
     if pytest.config.option.verbose:
         _print_webengine_output(result)
 
+    has_state = state is not None
+    has_baseline = example.has_baseline
+    baseline_ok = True
+
+    if not has_state:
+        fail("no state data was produced for comparison with the baseline")
+    else:
+        new_baseline = _create_baseline(state)
+        example.store_baseline(new_baseline)
+
+        if not has_baseline:
+            fail("%s baseline doesn't exist" % example.baseline_path)
+        else:
+            result = example.diff_baseline()
+
+            if result is not None:
+                baseline_ok = False
+                fail("BASELINE DOESN'T MATCH (make sure to update baselines before running tests):")
+
+                for line in result.split("\n"):
+                    fail(line)
+
     assert success, "%s failed to load" % example.relpath
     assert no_errors, "%s failed with %d errors" % (example.relpath, len(errors))
+    assert has_state, "%s didn't produce state data" % example.relpath
+    assert has_baseline, "%s doesn't have a baseline" % example.relpath
+    assert baseline_ok, "%s's baseline differs" % example.relpath
 
 
 def _run_example(example):

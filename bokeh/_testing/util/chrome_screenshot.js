@@ -107,7 +107,19 @@ CDP(async function(client) {
     }
   })
 
-  async function screenshot() {
+  async function evaluate(expression) {
+    const {result, exceptionDetails} = await Runtime.evaluate({expression})
+
+    if (exceptionDetails == null)
+      return result
+    else {
+      const {text, lineNumber, columnNumber, url, stackTrace} = exceptionDetails
+      errors.push({text, url, line: lineNumber+1, col: columnNumber+1, trace: collect_trace(stackTrace)})
+      return null
+    }
+  }
+
+  async function get_image() {
     const {result: {value: margin}} = await Runtime.evaluate({expression: "parseFloat(getComputedStyle(document.body).margin)"})
 
     const {result: {value: width}}  = await Runtime.evaluate({expression: "document.body.scrollWidth"})
@@ -119,34 +131,34 @@ CDP(async function(client) {
     await Emulation.setDeviceMetricsOverride({width: adjusted_width, height: adjusted_heigth, deviceScaleFactor: 0, mobile: false})
 
     const image = await Page.captureScreenshot({format: "png"})
-    const buffer = new Buffer(image.data, 'base64')
+    const buffer = new Buffer.from(image.data, "base64")
     mkdirp.sync(path.dirname(png))
-    fs.writeFileSync(png, buffer, 'base64')
+    fs.writeFileSync(png, buffer, "base64")
+
+    return null // TODO: buffer.toString("base64")
+  }
+
+  async function get_state() {
+    const expr = "JSON.stringify(Object.keys(Bokeh.index).map((key) => Bokeh.index[key].serializable_state()))"
+    const result = await evaluate(expr)
+    return result != null ? JSON.parse(result.value) : null
   }
 
   async function is_idle() {
-    const script = "typeof Bokeh !== 'undefined' && Bokeh.documents.length !== 0 && Bokeh.documents[0].is_idle"
-    const {result, exceptionDetails} = await Runtime.evaluate({expression: script})
-
-    if (result.type === "boolean")
-      return result.value
-    else {
-      const {text, lineNumber, columnNumber, url, stackTrace} = exceptionDetails
-      errors.push({text, url, line: lineNumber+1, col: columnNumber+1, trace: collect_trace(stackTrace)})
-      return null
-    }
+    const expr = "typeof Bokeh !== 'undefined' && Bokeh.documents.length !== 0 && Bokeh.documents[0].is_idle"
+    const result = await evaluate(expr)
+    return result != null && result.value === true
   }
 
   async function finish(timeout, success) {
-    if (success)
-      await screenshot()
+    let state = null
+    let image = null
+    if (success) {
+      state = await get_state()
+      image = await get_image()
+    }
 
-    console.log(JSON.stringify({
-      success: success,
-      timeout: timeout,
-      errors: errors,
-      messages: messages,
-    }))
+    console.log(JSON.stringify({success, state, image, timeout, errors, messages}))
 
     await client.close()
   }
